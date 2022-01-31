@@ -222,6 +222,8 @@ struct Vis {
 	Array textobjects;
 	Array bindings;
 	bool ignorecase;                     /* whether to ignore case when searching */
+	int pathsfifo_fd;                    /* file descriptor for the paths fifo (if one exists) */
+	char *pathsfifo_path;                /* path for the for the paths fifo (if one exists) */
 };
 
 enum VisEvents {

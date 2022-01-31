@@ -3,6 +3,12 @@
 #include <termkey.h>
 #include "vis-lua.h"
 
+/* XXX is including all of these necessary? */
+#include <errno.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
 // FIXME: avoid this redirection?
 typedef struct {
 	CommandDef def;
@@ -364,6 +370,47 @@ static bool cmd_set(Vis *vis, Win *win, Command *cmd, const char *argv[], Select
 	case OPTION_IGNORECASE:
 		vis->ignorecase = toggle ? !vis->ignorecase : arg.b;
 		break;
+	case OPTION_PATHSFIFO: {
+		/* Mostly copied from dvtm's open_or_create_fifo() */
+		struct stat info;
+		int fd;
+
+		do {
+			if ((fd = open(arg.s, O_RDWR | O_NONBLOCK)) == -1) {
+				if (errno == ENOENT && !mkfifo(arg.s, S_IRUSR | S_IWUSR))
+					continue;
+				vis_info_show(vis, "%s: %s", arg.s,
+					strerror(errno));
+				return false;
+			}
+		} while (fd == -1);
+
+		if (fstat(fd, &info) == -1) {
+			vis_info_show(vis, "%s: %s", arg.s, strerror(errno));
+			return false;
+		}
+		if (!S_ISFIFO(info.st_mode)) {
+			vis_info_show(vis, "%s is not a named pipe", arg.s);
+			return false;
+		}
+
+		if (vis->pathsfifo_fd != -1)
+			close(vis->pathsfifo_fd);
+
+
+		if (vis->pathsfifo_path != NULL)
+			free(vis->pathsfifo_path);
+
+		vis->pathsfifo_fd = fd;
+		/* XXX should this malloc'd? */
+		vis->pathsfifo_path = malloc(strlen(arg.s));
+		strcpy(vis->pathsfifo_path, arg.s);
+
+		vis_info_show(vis, "Sucessfully opened %s (fd %d)",
+			vis->pathsfifo_path, vis->pathsfifo_fd);
+
+		break;
+	}
 	default:
 		if (!opt->func)
 			return false;

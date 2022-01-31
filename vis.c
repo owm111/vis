@@ -716,6 +716,8 @@ Vis *vis_new(Ui *ui, VisEvent *event) {
 		if (event->mode_replace_input)
 			vis_modes[VIS_MODE_REPLACE].input = event->mode_replace_input;
 	}
+	vis->pathsfifo_fd = -1;
+	vis->pathsfifo_path = NULL;
 	return vis;
 err:
 	vis_free(vis);
