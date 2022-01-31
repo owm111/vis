@@ -1353,6 +1353,75 @@ bool vis_signal_handler(Vis *vis, int signum, const siginfo_t *siginfo, const vo
 	return false;
 }
 
+static void handle_pathsfifo(Vis *vis)
+{
+	vis_info_show(vis, "Something was written to pathsfifo!");
+
+	char buf[PATH_MAX],
+		*buf_start = buf, *buf_end = buf + PATH_MAX,
+		*string_start, *string_end,
+		/* XXX set the max paths to keep dynamically? (eg an option) */
+		/* XXX early termination if paths is filled? */
+		*paths[5] = {NULL, NULL, NULL, NULL, NULL};
+	/* XXX is it necesary to keep track of string_len? */
+	int r, string_len, i = 0;
+
+	while ((r = read(vis->pathsfifo_fd, buf_start, buf_end - buf_start)) > 0) {
+		buf_end = buf_start + r;
+		/* Anything left over from the previous iteration will be held
+		 * in [buf, buf_start). See below for elaboration. */
+		string_start = buf;
+		string_end = buf_start;
+		string_len = buf_start - buf;
+
+		while (string_end != buf_end) {
+			if (*string_end == '\0') {
+				if (i < 5) {
+					paths[i] = malloc(string_len);
+					strcpy(paths[i], string_start);
+					++i;
+				}
+				string_start = string_end + 1;
+				string_len = 0;
+			} else {
+				++string_len;
+			}
+			++string_end;
+		}
+
+		/* string_start will equal string_end when a complete path +
+		 * '\0' has been read; otherwise, the next read() will
+		 * (probably) contain the rest of the path. So, the unterminated
+		 * string at the end (string_start, which is string_len bytes
+		 * long) is moved to the start of the buffer (buf) and the next
+		 * read will begin after it (the new buf_start value).
+		 * If string_len is more than half of PATH_MAX, then the source
+		 * and destination will overlap, so memmove will be needed.
+		 */
+		if (string_start < string_end) {
+			if (string_len < PATH_MAX / 2)
+				memcpy(buf, string_start, string_len);
+			else
+				memmove(buf, string_start, string_len);
+		}
+		buf_start = buf + string_len;
+	}
+
+	if (r == -1 && errno != EAGAIN) {
+		vis_info_show(vis, "%s: %s", vis->pathsfifo_path, strerror(errno));
+		return;
+	}
+
+	vis_info_show(vis, "Read %d paths: %s, %s, %s, %s, %s", i,
+		paths[0], paths[1], paths[2], paths[3], paths[4]);
+
+	free(paths[0]);
+	free(paths[1]);
+	free(paths[2]);
+	free(paths[3]);
+	free(paths[4]);
+}
+
 int vis_run(Vis *vis) {
 	if (!vis->windows)
 		return EXIT_SUCCESS;
@@ -1372,9 +1441,15 @@ int vis_run(Vis *vis) {
 	sigsetjmp(vis->sigbus_jmpbuf, 1);
 
 	while (vis->running) {
+		int nfds = 0;
 		fd_set fds;
 		FD_ZERO(&fds);
 		FD_SET(STDIN_FILENO, &fds);
+
+		if (vis->pathsfifo_fd != -1) {
+			FD_SET(vis->pathsfifo_fd, &fds);
+			nfds = vis->pathsfifo_fd;
+		}
 
 		if (vis->sigbus) {
 			char *name = NULL;
@@ -1414,7 +1489,7 @@ int vis_run(Vis *vis) {
 
 		vis_update(vis);
 		idle.tv_sec = vis->mode->idle_timeout;
-		int r = pselect(1, &fds, NULL, NULL, timeout, &emptyset);
+		int r = pselect(nfds + 1, &fds, NULL, NULL, timeout, &emptyset);
 		if (r == -1 && errno == EINTR)
 			continue;
 
@@ -1422,6 +1497,9 @@ int vis_run(Vis *vis) {
 			/* TODO save all pending changes to a ~suffixed file */
 			vis_die(vis, "Error in mainloop: %s\n", strerror(errno));
 		}
+
+		if (vis->pathsfifo_fd != -1 && FD_ISSET(vis->pathsfifo_fd, &fds))
+			handle_pathsfifo(vis);
 
 		if (!FD_ISSET(STDIN_FILENO, &fds)) {
 			if (vis->mode->idle)
