@@ -1359,13 +1359,12 @@ static void handle_pathsfifo(Vis *vis)
 
 	char buf[PATH_MAX],
 		*buf_start = buf, *buf_end = buf + PATH_MAX,
-		*string_start, *string_end,
+		*string_start, *string_end;
 		/* XXX set the max paths to keep dynamically? (eg an option) */
 		/* XXX early termination if paths is filled? */
-		*paths[5] = {NULL, NULL, NULL, NULL, NULL};
 	/* XXX is it necesary to keep track of string_len? */
-	/* j marks the end of already-open files */
-	int r, string_len, i, j = 0;
+	int r, string_len, i = 0;
+	enum UiOption options = view_options_get(vis->win->view);
 
 	/* Close all windows that won't lose changes and that aren't internal
 	 * (similar to how cmd_qall() works) */
@@ -1382,12 +1381,10 @@ static void handle_pathsfifo(Vis *vis)
 	 * not new files open.
 	 * XXX decide: go based on windows, files, non-internal files, etc
 	 */
-	for (File *file = vis->files; file && j < 5; file = file = file->next) {
-		if (file->internal)
-			continue;
-		paths[j++] = file->name;
+	for (File *file = vis->files; file && i < 5; file = file = file->next) {
+		if (!file->internal)
+			++i;
 	}
-	i = j;
 
 	while ((r = read(vis->pathsfifo_fd, buf_start, buf_end - buf_start)) > 0) {
 		buf_end = buf_start + r;
@@ -1400,9 +1397,13 @@ static void handle_pathsfifo(Vis *vis)
 		while (string_end != buf_end) {
 			if (*string_end == '\0') {
 				if (i < 5) {
-					paths[i] = malloc(string_len);
-					strcpy(paths[i], string_start);
-					++i;
+					/* XXX can this open duplicate windows? */
+					if (vis_window_new(vis, string_start)) {
+						++i;
+					} else {
+						vis_info_show(vis, "Could not open `%s' %s", string_start,
+							errno ? strerror(errno) : "");
+					}
 				}
 				string_start = string_end + 1;
 				string_len = 0;
@@ -1433,26 +1434,6 @@ static void handle_pathsfifo(Vis *vis)
 	if (r == -1 && errno != EAGAIN) {
 		vis_info_show(vis, "%s: %s", vis->pathsfifo_path, strerror(errno));
 		return;
-	}
-
-	vis_info_show(vis, "Read %d paths: %s, %s, %s, %s, %s", i,
-		paths[0], paths[1], paths[2], paths[3], paths[4]);
-
-
-	enum UiOption options = view_options_get(vis->win->view);
-
-	/* Open all windows from paths */
-	/* XXX avoid opening duplicates? */
-	for (; j < 5; ++j) {
-		if (!paths[j])
-			continue;
-		if (!vis_window_new(vis, paths[j])) {
-			vis_info_show(vis, "Could not open `%s' %s", paths[j],
-				errno ? strerror(errno) : "");
-			continue;
-		}
-		view_options_set(vis->win->view, options);
-		free(paths[j]);
 	}
 }
 
