@@ -1364,7 +1364,30 @@ static void handle_pathsfifo(Vis *vis)
 		/* XXX early termination if paths is filled? */
 		*paths[5] = {NULL, NULL, NULL, NULL, NULL};
 	/* XXX is it necesary to keep track of string_len? */
-	int r, string_len, i = 0;
+	/* j marks the end of already-open files */
+	int r, string_len, i, j = 0;
+
+	/* Close all windows that won't lose changes and that aren't internal
+	 * (similar to how cmd_qall() works) */
+	/* XXX automatically save modified files before closing? see cmd_write*/
+	for (Win *win = vis->windows; win; win = win->next) {
+		if (!vis_window_closable(win) || win->file->internal)
+			continue;
+		/* XXX this redraws the screen every time. could this somehow
+		 * be put off until all windows have been closed/opened? */
+		vis_window_close(win);
+	}
+
+	/* Insert open paths into array, so that 5 is the maximum files open,
+	 * not new files open.
+	 * XXX decide: go based on windows, files, non-internal files, etc
+	 */
+	for (File *file = vis->files; file && j < 5; file = file = file->next) {
+		if (file->internal)
+			continue;
+		paths[j++] = file->name;
+	}
+	i = j;
 
 	while ((r = read(vis->pathsfifo_fd, buf_start, buf_end - buf_start)) > 0) {
 		buf_end = buf_start + r;
@@ -1415,11 +1438,22 @@ static void handle_pathsfifo(Vis *vis)
 	vis_info_show(vis, "Read %d paths: %s, %s, %s, %s, %s", i,
 		paths[0], paths[1], paths[2], paths[3], paths[4]);
 
-	free(paths[0]);
-	free(paths[1]);
-	free(paths[2]);
-	free(paths[3]);
-	free(paths[4]);
+
+	enum UiOption options = view_options_get(vis->win->view);
+
+	/* Open all windows from paths */
+	/* XXX avoid opening duplicates? */
+	for (; j < 5; ++j) {
+		if (!paths[j])
+			continue;
+		if (!vis_window_new(vis, paths[j])) {
+			vis_info_show(vis, "Could not open `%s' %s", paths[j],
+				errno ? strerror(errno) : "");
+			continue;
+		}
+		view_options_set(vis->win->view, options);
+		free(paths[j]);
+	}
 }
 
 int vis_run(Vis *vis) {
