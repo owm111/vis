@@ -2263,7 +2263,8 @@ int main(int argc, char *argv[]) {
 	    sigaction(SIGCONT, &sa, NULL) == -1 ||
 	    sigaction(SIGWINCH, &sa, NULL) == -1 ||
 	    sigaction(SIGTERM, &sa, NULL) == -1 ||
-	    sigaction(SIGHUP, &sa, NULL) == -1) {
+	    sigaction(SIGHUP, &sa, NULL) == -1 ||
+	    sigaction(SIGUSR1, &sa, NULL) == -1) {
 		vis_die(vis, "Failed to set signal handler: %s\n", strerror(errno));
 	}
 
@@ -2278,6 +2279,7 @@ int main(int argc, char *argv[]) {
 	sigaddset(&blockset, SIGWINCH);
 	sigaddset(&blockset, SIGTERM);
 	sigaddset(&blockset, SIGHUP);
+	sigaddset(&blockset, SIGUSR1);
 	if (sigprocmask(SIG_BLOCK, &blockset, NULL) == -1)
 		vis_die(vis, "Failed to block signals\n");
 

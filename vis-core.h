@@ -211,6 +211,7 @@ struct Vis {
 	volatile sig_atomic_t need_resize;   /* need to resize UI (SIGWINCH occured) */
 	volatile sig_atomic_t resume;        /* need to resume UI (SIGCONT occured) */
 	volatile sig_atomic_t terminate;     /* need to terminate we were being killed by SIGTERM */
+	volatile sig_atomic_t try_qall;      /* need to try to quit all (SIGUSR1) */
 	sigjmp_buf sigbus_jmpbuf;            /* used to jump back to a known good state in the mainloop after (SIGBUS) */
 	Map *actions;                        /* registered editor actions / special keys commands */
 	Array actions_user;                  /* dynamically allocated editor actions */

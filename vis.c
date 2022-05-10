@@ -1347,6 +1347,9 @@ bool vis_signal_handler(Vis *vis, int signum, const siginfo_t *siginfo, const vo
 	case SIGHUP:
 		vis->terminate = true;
 		return true;
+	case SIGUSR1:
+		vis->try_qall = true;
+		return true;
 	}
 	return false;
 }
@@ -1397,6 +1400,11 @@ int vis_run(Vis *vis) {
 		if (vis->interrupted) {
 			vis->interrupted = false;
 			vis_keys_push(vis, "<C-c>", 0, true);
+			continue;
+		}
+		if (vis->try_qall) {
+			vis->try_qall = false;
+			vis_keys_push(vis, "<Escape><Escape>:qa<Enter>", 0, true);
 			continue;
 		}
 
